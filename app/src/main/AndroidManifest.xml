@@ -10,8 +10,10 @@
     <!-- Runtime-requested on Android 13+. Used only for local hazard alerts. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!--
-      No INTERNET permission by design: all inference is on-device and the app
-      must run in Airplane Mode. Do not add network permissions.
+      No INTERNET permission in this base manifest by design: all inference is
+      on-device and the `offline` flavor must run in Airplane Mode. Only the
+      `connected` flavor adds INTERNET via src/connected/AndroidManifest.xml,
+      solely for edge->cloud reporting; detection never depends on it.
     -->
 
     <application

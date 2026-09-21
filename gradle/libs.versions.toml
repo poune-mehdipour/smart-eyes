@@ -57,6 +57,9 @@ kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 # TensorFlow Lite (LiteRT) — offline on-device inference
 tensorflow-lite = { group = "org.tensorflow", name = "tensorflow-lite", version.ref = "tensorflowLite" }
 tensorflow-lite-gpu = { group = "org.tensorflow", name = "tensorflow-lite-gpu", version.ref = "tensorflowLite" }
+# GpuDelegateFactory.Options / CompatibilityList live here and are referenced
+# directly, so the API artifact must be on the compile classpath explicitly.
+tensorflow-lite-gpu-api = { group = "org.tensorflow", name = "tensorflow-lite-gpu-api", version.ref = "tensorflowLite" }
 
 # Test
 junit = { group = "junit", name = "junit", version.ref = "junit" }

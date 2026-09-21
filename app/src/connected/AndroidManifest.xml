@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  `connected` flavor only: grants the INTERNET permission so the cloud
+  reporter can reach the connector. The `offline` flavor has no such file, so
+  its merged manifest still carries no network permission at all — the
+  original "offline by construction" guarantee is preserved per flavor
+  rather than weakened globally.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>

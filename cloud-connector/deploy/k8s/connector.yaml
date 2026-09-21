@@ -1,0 +1,118 @@
+# Kubernetes manifests for the Guardian Cloud Connector.
+#
+# Scope: these are clean, reviewable manifests for running the connector
+# against an existing PostgreSQL (in-cluster or managed). They have been
+# validated for structure but NOT applied to a live cluster as part of this
+# repository's verification — deploying them is an operational step, not a
+# claim this repo makes.
+#
+# Secrets are referenced, never included: create them out-of-band, e.g.
+#   kubectl create secret generic guardian-connector-secrets \
+#     --from-literal=DATABASE_URL=... \
+#     --from-literal=EDGE_API_TOKEN=... \
+#     --from-literal=TOKEN_CIPHER_KEY=... \
+#     --from-literal=BETAGRID_WEBHOOK_SECRET=... \
+#     --from-literal=ALPHASENSE_CLIENT_SECRET=...
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: guardian-connector-config
+  labels:
+    app: guardian-connector
+data:
+  CONNECTOR_HTTP_ADDR: ":8080"
+  CONNECTOR_GRPC_ADDR: ":9090"
+  LOG_LEVEL: "info"
+  COMMAND_TTL: "24h"
+  REQUEST_TIMEOUT: "15s"
+  WEBHOOK_MAX_SKEW: "5m"
+  # Simulated-provider endpoints; empty disables the integration.
+  ALPHASENSE_BASE_URL: ""
+  ALPHASENSE_TOKEN_URL: ""
+  ALPHASENSE_CLIENT_ID: ""
+  ALPHASENSE_POLL_INTERVAL: "30s"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guardian-connector
+  labels:
+    app: guardian-connector
+spec:
+  # Single replica by intent: command claiming uses FOR UPDATE SKIP LOCKED and
+  # event idempotency lives in unique constraints, so replicas would be safe
+  # for ingest — but the AlphaSense poller would poll once per replica.
+  # Leader election for the poller is documented future work.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: guardian-connector
+  template:
+    metadata:
+      labels:
+        app: guardian-connector
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+      containers:
+        - name: connector
+          image: guardian-connector:latest   # replace with your registry tag
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: grpc
+              containerPort: 9090
+          envFrom:
+            - configMapRef:
+                name: guardian-connector-config
+            - secretRef:
+                name: guardian-connector-secrets
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guardian-connector
+  labels:
+    app: guardian-connector
+spec:
+  selector:
+    app: guardian-connector
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: grpc
+      port: 9090
+      targetPort: grpc

@@ -1,0 +1,82 @@
+# CI for the Guardian repository.
+#
+# Two independent pipelines:
+#   * cloud-connector: Go format/vet/test (with a real Postgres service for
+#     the storage integration tests), build, and Docker image build.
+#   * android: JVM unit tests for the pure-Kotlin core modules. Runs the same
+#     tests a developer runs locally; no emulator (instrumentation tests need
+#     a device and are out of CI scope, as documented in TEST_REPORT-style docs).
+#
+# There is deliberately NO deployment stage: this repository has no cloud
+# environment, and a pipeline that pretends to deploy would be theater.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  go:
+    name: cloud-connector (fmt, vet, test, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloud-connector
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: guardian
+          POSTGRES_PASSWORD: guardian-ci
+          POSTGRES_DB: guardian_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U guardian -d guardian_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cloud-connector/go.mod
+          cache-dependency-path: cloud-connector/go.sum
+      - name: gofmt
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then
+            echo "gofmt needed on:" && echo "$out" && exit 1
+          fi
+      - name: go vet
+        run: go vet ./...
+      - name: go test (unit + Postgres integration)
+        env:
+          TEST_DATABASE_URL: postgres://guardian:guardian-ci@localhost:5432/guardian_test?sslmode=disable
+        run: go test -race ./...
+      - name: go build
+        run: go build ./...
+
+  docker:
+    name: cloud-connector (docker build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t guardian-connector:ci cloud-connector
+
+  android:
+    name: android (JVM unit tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: JVM unit tests (pure-Kotlin modules)
+        # :core:model and :core:detection carry no Android dependency; their
+        # tests run on any JVM. :core:cloud is the new edge->cloud module.
+        run: ./gradlew :core:model:test :core:detection:test :core:cloud:test

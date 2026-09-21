@@ -33,6 +33,7 @@ dependencies {
     implementation(project(":core:detection"))
     implementation(project(":core:camera"))
     implementation(project(":core:alerts"))
+    implementation(project(":core:cloud"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)

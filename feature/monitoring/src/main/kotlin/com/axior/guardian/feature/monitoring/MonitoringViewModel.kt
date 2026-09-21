@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.axior.guardian.core.alerts.AlertController
 import com.axior.guardian.core.camera.CameraFrameSource
+import com.axior.guardian.core.cloud.CloudReporter
 import com.axior.guardian.core.detection.DetectionConfig
 import com.axior.guardian.core.detection.DetectionEngine
 import com.axior.guardian.core.detection.EventConfirmationEngine
@@ -16,9 +17,11 @@ import com.axior.guardian.core.model.SecurityEvent
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -42,6 +45,7 @@ class MonitoringViewModel @Inject constructor(
     private val detectionEngine: DetectionEngine,
     private val eventEngine: EventConfirmationEngine,
     private val alertController: AlertController,
+    private val cloudReporter: CloudReporter,
     config: DetectionConfig,
 ) : ViewModel() {
 
@@ -52,6 +56,7 @@ class MonitoringViewModel @Inject constructor(
 
     private val metrics = InferenceMetricsAggregator(config.latencyWindow)
     private var monitoringJob: Job? = null
+    private var telemetryJob: Job? = null
 
     init {
         // Reflect the real model lifecycle in the UI as it loads.
@@ -95,6 +100,21 @@ class MonitoringViewModel @Inject constructor(
             frameSource.frames.collect { frame -> processFrame(frame) }
         }
 
+        // Periodic health snapshot to the cloud while monitoring. reportTelemetry
+        // is fire-and-forget and a no-op in the offline flavor; a network outage
+        // can only ever cost telemetry, never detection.
+        telemetryJob = viewModelScope.launch(Dispatchers.Default) {
+            while (isActive) {
+                val s = _state.value
+                cloudReporter.reportTelemetry(
+                    monitoring = s.isMonitoring,
+                    modelStatus = modelStatusLabel(s.modelStatus),
+                    metrics = s.metrics,
+                )
+                delay(TELEMETRY_INTERVAL_MS)
+            }
+        }
+
         _state.update { it.copy(status = MonitoringStatus.Monitoring) }
     }
 
@@ -102,6 +122,8 @@ class MonitoringViewModel @Inject constructor(
         if (!_state.value.isMonitoring) return
         monitoringJob?.cancel()
         monitoringJob = null
+        telemetryJob?.cancel()
+        telemetryJob = null
         frameSource.stop()
         eventEngine.reset()
         _state.update {
@@ -121,7 +143,11 @@ class MonitoringViewModel @Inject constructor(
             val events = eventEngine.process(detections, frame.timestampMs)
             if (events.isNotEmpty()) {
                 metrics.recordConfirmedEvents(events.size)
+                // Local alert first — it must never wait on anything cloud-shaped.
                 events.forEach { alertController.onConfirmedEvent(it) }
+                // Then queue for cloud delivery: non-blocking, non-throwing,
+                // no-op when cloud reporting is disabled or unconfigured.
+                events.forEach { cloudReporter.reportEvent(it) }
             }
             newEvent = events.lastOrNull()
         } catch (e: Exception) {
@@ -147,6 +173,13 @@ class MonitoringViewModel @Inject constructor(
         }
     }
 
+    private fun modelStatusLabel(status: ModelStatus): String = when (status) {
+        is ModelStatus.Ready -> "READY"
+        is ModelStatus.Loading -> "LOADING"
+        is ModelStatus.NotProvisioned -> "NOT_PROVISIONED"
+        is ModelStatus.Error -> "ERROR"
+    }
+
     private fun uprightAspect(frame: AnalysisFrame): Float {
         val rot = ((frame.rotationDegrees % 360) + 360) % 360
         val (w, h) = if (rot == 90 || rot == 270) frame.height to frame.width
@@ -158,5 +191,9 @@ class MonitoringViewModel @Inject constructor(
         stopMonitoring()
         detectionEngine.close()
         alertController.release()
+    }
+
+    private companion object {
+        const val TELEMETRY_INTERVAL_MS = 30_000L
     }
 }

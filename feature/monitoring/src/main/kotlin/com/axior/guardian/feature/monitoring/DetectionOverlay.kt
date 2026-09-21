@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.runtime.Composable
@@ -72,11 +73,13 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawLabel(
         topLeft = Offset(x, bgTop),
         size = Size(measured.size.width + padding * 2, bgHeight),
     )
+    // The (TextMeasurer, String) drawText overload has no `color` parameter;
+    // the label colour is routed through TextStyle instead.
     drawText(
         textMeasurer = measurer,
         text = label,
         topLeft = Offset(x + padding, bgTop + padding / 2),
-        color = Color.White,
+        style = TextStyle(color = Color.White),
     )
 }
 

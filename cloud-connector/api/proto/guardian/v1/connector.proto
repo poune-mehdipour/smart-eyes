@@ -1,0 +1,134 @@
+// Guardian Cloud Connector — internal platform API, version 1.
+//
+// This is the boundary between the connector and downstream platform
+// services (dashboards, alert routers, analytics). It is versioned by
+// package (guardian.v1): breaking changes require guardian.v2, additive
+// changes (new fields, new RPCs) are allowed within v1.
+//
+// The API is deliberately small: read devices, read/stream normalized
+// events, send commands. Anything provider-specific is invisible here —
+// that is the point of the connector.
+syntax = "proto3";
+
+package guardian.v1;
+
+option go_package = "github.com/poune-mehdipour/smart-eyes/cloud-connector/api/gen/guardian/v1;guardianv1";
+
+import "google/protobuf/timestamp.proto";
+
+// ConnectorService is consumed by downstream platform services.
+service ConnectorService {
+  // GetDevice returns one device by connector ID.
+  rpc GetDevice(GetDeviceRequest) returns (GetDeviceResponse);
+
+  // ListDevices returns the known fleet, most recently seen first.
+  rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse);
+
+  // ListRecentEvents returns up to `limit` normalized hazard events,
+  // newest first.
+  rpc ListRecentEvents(ListRecentEventsRequest) returns (ListRecentEventsResponse);
+
+  // StreamEvents pushes every hazard event accepted from the moment of
+  // subscription. It is a live feed, not a replay: use ListRecentEvents to
+  // catch up, then stream.
+  rpc StreamEvents(StreamEventsRequest) returns (stream StreamEventsResponse);
+
+  // SendCommand enqueues (or pushes, for push-capable providers) a command
+  // to a device. Reusing an idempotency_key returns the original command.
+  rpc SendCommand(SendCommandRequest) returns (SendCommandResponse);
+
+  // GetCommand returns a command's current delivery state.
+  rpc GetCommand(GetCommandRequest) returns (GetCommandResponse);
+}
+
+// ---- Domain messages -------------------------------------------------------
+
+message Device {
+  string id = 1;           // connector UUID
+  string external_id = 2;  // the provider's own identifier
+  string provider = 3;     // "guardian-edge" | "alphasense" | "betagrid"
+  string name = 4;
+  DeviceStatus status = 5;
+  string app_version = 6;
+  google.protobuf.Timestamp last_seen_at = 7;
+}
+
+enum DeviceStatus {
+  DEVICE_STATUS_UNSPECIFIED = 0;
+  DEVICE_STATUS_ONLINE = 1;
+  DEVICE_STATUS_OFFLINE = 2;
+  DEVICE_STATUS_UNKNOWN = 3;
+}
+
+message HazardEvent {
+  string id = 1;
+  string device_id = 2;
+  string source = 3;       // provider name
+  HazardType type = 4;
+  double confidence = 5;   // normalized to [0,1] whatever the source used
+  google.protobuf.Timestamp first_seen_at = 6;
+  google.protobuf.Timestamp confirmed_at = 7;
+  google.protobuf.Timestamp received_at = 8;
+}
+
+enum HazardType {
+  HAZARD_TYPE_UNSPECIFIED = 0;
+  HAZARD_TYPE_FIRE = 1;
+  HAZARD_TYPE_SMOKE = 2;
+  HAZARD_TYPE_FALL = 3;
+  HAZARD_TYPE_INTRUSION = 4;
+  HAZARD_TYPE_CAMERA_TAMPERING = 5;
+}
+
+message Command {
+  string id = 1;
+  string device_id = 2;
+  CommandType type = 3;
+  string payload_json = 4;
+  CommandState state = 5;
+  string result_message = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp completed_at = 8;
+}
+
+enum CommandType {
+  COMMAND_TYPE_UNSPECIFIED = 0;
+  COMMAND_TYPE_GET_STATUS = 1;
+  COMMAND_TYPE_START_MONITORING = 2;
+  COMMAND_TYPE_STOP_MONITORING = 3;
+  COMMAND_TYPE_UPDATE_MONITORING_CONFIG = 4;
+}
+
+enum CommandState {
+  COMMAND_STATE_UNSPECIFIED = 0;
+  COMMAND_STATE_PENDING = 1;
+  COMMAND_STATE_DELIVERED = 2;
+  COMMAND_STATE_ACKNOWLEDGED = 3;
+  COMMAND_STATE_FAILED = 4;
+}
+
+// ---- Requests / responses --------------------------------------------------
+
+message GetDeviceRequest { string id = 1; }
+message GetDeviceResponse { Device device = 1; }
+
+message ListDevicesRequest {}
+message ListDevicesResponse { repeated Device devices = 1; }
+
+message ListRecentEventsRequest { int32 limit = 1; }
+message ListRecentEventsResponse { repeated HazardEvent events = 1; }
+
+message StreamEventsRequest {}
+
+message StreamEventsResponse { HazardEvent event = 1; }
+
+message SendCommandRequest {
+  string device_id = 1;
+  CommandType type = 2;
+  string payload_json = 3;
+  string idempotency_key = 4;
+}
+message SendCommandResponse { Command command = 1; }
+
+message GetCommandRequest { string id = 1; }
+message GetCommandResponse { Command command = 1; }

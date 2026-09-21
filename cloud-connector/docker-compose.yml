@@ -1,0 +1,66 @@
+# Local development environment: `docker compose up` starts PostgreSQL, the
+# connector, and the provider simulator (fake AlphaSense OAuth2+REST API and a
+# BetaGrid webhook pusher), fully wired together.
+#
+# Secrets here are development-only defaults, safe to commit BECAUSE they only
+# ever address containers on this compose network. Real deployments inject
+# real secrets via the environment (see deploy/k8s and .env.example).
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: guardian
+      POSTGRES_PASSWORD: guardian-dev
+      POSTGRES_DB: guardian
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U guardian -d guardian"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  connector:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://guardian:guardian-dev@postgres:5432/guardian?sslmode=disable
+      CONNECTOR_HTTP_ADDR: ":8080"
+      CONNECTOR_GRPC_ADDR: ":9090"
+      EDGE_API_TOKEN: dev-edge-token
+      # 64 hex chars = 32 bytes; dev-only key.
+      TOKEN_CIPHER_KEY: 6465762d6f6e6c792d6b65792d646f2d6e6f742d7573652d696e2d70726f6421
+      BETAGRID_WEBHOOK_SECRET: dev-betagrid-secret
+      ALPHASENSE_BASE_URL: http://providersim:9000
+      ALPHASENSE_TOKEN_URL: http://providersim:9000/oauth/token
+      ALPHASENSE_CLIENT_ID: alphasense-demo-client
+      ALPHASENSE_CLIENT_SECRET: alphasense-demo-secret
+      ALPHASENSE_POLL_INTERVAL: 20s
+      LOG_LEVEL: debug
+    ports:
+      - "8080:8080"   # edge REST API, webhooks, /healthz /readyz /metrics
+      - "9090:9090"   # internal gRPC API
+    # No container healthcheck: the image is FROM scratch (no shell/curl to
+    # probe with). Liveness/readiness are HTTP endpoints (/healthz, /readyz)
+    # probed by Kubernetes in deploy/k8s/connector.yaml.
+
+  providersim:
+    build: .
+    entrypoint: ["/providersim"]
+    environment:
+      SIM_ADDR: ":9000"
+      SIM_CLIENT_ID: alphasense-demo-client
+      SIM_CLIENT_SECRET: alphasense-demo-secret
+      SIM_TOKEN_TTL: 90s   # short on purpose: forces the OAuth refresh path
+      BETAGRID_TARGET_URL: http://connector:8080/v1/webhooks/betagrid
+      BETAGRID_WEBHOOK_SECRET: dev-betagrid-secret
+      BETAGRID_PUSH_INTERVAL: 30s
+    depends_on:
+      - connector
+
+volumes:
+  pgdata:

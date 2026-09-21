@@ -16,7 +16,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -269,10 +268,17 @@ private fun Controls(
             ),
             shape = RoundedCornerShape(16.dp),
         ) {
-            Icon(
-                imageVector = if (state.isMonitoring) Icons.Filled.Stop else Icons.Filled.PlayArrow,
-                contentDescription = null,
-            )
+            // Icons.Filled.Stop is not in material-icons-core; a drawn square
+            // avoids pulling in material-icons-extended for one glyph.
+            if (state.isMonitoring) {
+                Box(
+                    modifier = Modifier
+                        .size(18.dp)
+                        .background(Color.White, RoundedCornerShape(3.dp)),
+                )
+            } else {
+                Icon(imageVector = Icons.Filled.PlayArrow, contentDescription = null)
+            }
             Text(
                 text = if (state.isMonitoring) "  Stop Monitoring" else "  Start Monitoring",
                 style = MaterialTheme.typography.titleLarge,

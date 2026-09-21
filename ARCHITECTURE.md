@@ -47,6 +47,18 @@ exercise rather than a refactor.
 - The frame stream is a `SharedFlow` with a 1-slot buffer and drop-oldest
   overflow. The ViewModel collects on `Dispatchers.Default`.
 
+## Edge ↔ cloud (added with the Cloud Connector milestone)
+
+The same seam philosophy extends off the device. `:core:cloud` is another
+pure-JVM module: `CloudReporter` is the contract the monitoring pipeline
+sees, `NoOpCloudReporter` is bound in the `offline` flavor (which keeps no
+INTERNET permission) and a queueing, retrying reporter in the `connected`
+flavor. Reporting happens strictly *after* the local alert and is
+fire-and-forget — cloud availability can never affect detection. The cloud
+side lives in `cloud-connector/` (Go) and has its own documentation; the
+wire contract is mirrored by `CloudContract.kt` and
+`cloud-connector/internal/ingest`.
+
 ## Deliberate non-decisions (documented, not forgotten)
 
 - **Confidence is not calibrated.** The model score is shown as a health signal,

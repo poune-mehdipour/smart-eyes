@@ -1,0 +1,18 @@
+{
+  "name": "YOLOv8 Fire/Smoke (evaluation)",
+  "version": "unversioned-community",
+  "source": "Ultralytics YOLOv8 fire/smoke community weights (see MODEL_INTEGRATION_RECORD.md)",
+  "license": "AGPL-3.0",
+  "commercialUse": "EVALUATION_ONLY",
+  "inputWidth": 640,
+  "inputHeight": 640,
+  "inputChannels": 3,
+  "inputLayout": "NHWC",
+  "normalization": "SCALE_0_1",
+  "inputRgb": true,
+  "inputQuantized": false,
+  "outputFormat": "YOLOV8_DETECT",
+  "classNames": ["fire", "smoke"],
+  "classToDetector": { "fire": "FIRE", "smoke": "SMOKE" },
+  "coordinatesNormalized": true
+}
